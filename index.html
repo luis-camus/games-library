@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <spin-wheel config='{
+  "winningIndex": 0,
+  "options": [
+    {"icon": "var(--black-star-outline)", "color": "#ff6b6b", "prize": "100 Points"},
+    {"icon": "var(--black-heart-outline)", "color": "#4ecdc4", "prize": "Mystery Box"},
+    {"icon": "var(--black-bell-outline)", "color": "#45b7d1", "prize": "$20 Credit"},
+    {"icon": "var(--black-chat-outline)", "color": "#f9ca24", "prize": "VIP Status"},
+    {"icon": "var(--black-bulb-outline)", "color": "#9b59b6", "prize": "Event Ticket"},
+    {"icon": "var(--black-smile-outline)", "color": "#e67e22", "prize": "Access"}
+  ]
+}'></spin-wheel>
+
+<script type="module" src="./components/ScratchCard.js"></script>
+<script type="module" src="./components/Gumball.js"></script>
+
+<scratch-card config='{
+    "pre_text": "Scratch me!",
+    "post_text": "100 Points",
+    "bg": "https://demo.moneythor.com/img/100points.jpeg",
+    "fg": "https://demo.moneythor.com/img/scratch-card.png",
+    "clear_percentage": 40
+}'></scratch-card>
+
+<gumball-machine config='{
+    "winningIndex": 1,
+    "options": [
+        {"color": "#ff6b6b", "prize": "Red Prize"},
+        {"color": "#4ecdc4", "prize": "Teal Prize"}
+    ]
+}'></gumball-machine>
+
+<script type="module" src="./components/SpinWheel.js"></script>
+</body>
+</html>
