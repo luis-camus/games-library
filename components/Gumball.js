@@ -30,9 +30,7 @@ export class GumballMachine extends HTMLElement {
     }
   }
 
-  connectedCallback() {
-      // Init is handled by attributeChangedCallback when config is present
-  }
+  connectedCallback() { }
 
   init(parameters) {
     this.config = {
@@ -63,25 +61,61 @@ export class GumballMachine extends HTMLElement {
     this.gameState.gumballs = [];
     if (this.config.options.length === 0) return;
 
-    // FIX 1: Reduced count from 300 to 120 so they don't blob together
-    const totalBalls = 120; 
+    // --- PHYSICS PACKING ALGORITHM ---
+    // Instead of random placement, we stack them layer by layer from the bottom
+    
+    const domeRadius = 100; // Dome is 200px wide
+    const ballSize = 18;    // Size of gumball
+    const overlap = 0.85;   // 85% height for hexagonal nesting
+    
+    let currentY = 190;     // Start at the very bottom of the 200px dome
+    let row = 0;
+    let ballCount = 0;
 
-    for (let i = 0; i < totalBalls; i++) {
-        const colorIndex = i % this.config.options.length;
-        const option = this.config.options[colorIndex];
+    // Loop upwards until we reach the middle of the dome
+    while (currentY > 80) {
         
-        this.gameState.gumballs.push({
-          color: option.color,
-          prize: option.prize,
-          isWinning: false,
-          // FIX 2: Adjusted positions to keep balls strictly inside the dome
-          left: Math.random() * 88, // 0% to 88% (prevents right overflow)
-          top: Math.random() * 88,  // 0% to 88% (prevents bottom overflow)
-          zIndex: Math.floor(Math.random() * 50)
-        });
+        // Calculate how wide the dome is at this specific Y height (Circle chord math)
+        // dy is distance from center (100)
+        const dy = Math.abs(100 - currentY);
+        const chordWidth = 2 * Math.sqrt((domeRadius * domeRadius) - (dy * dy));
+        
+        // Calculate how many balls fit in this row
+        const ballsInRow = Math.floor(chordWidth / ballSize);
+        
+        // Calculate starting X to center the row
+        const startX = 100 - (ballsInRow * ballSize / 2);
+
+        for (let i = 0; i < ballsInRow; i++) {
+            const colorIndex = ballCount % this.config.options.length;
+            const option = this.config.options[colorIndex];
+            
+            // Offset every other row for "brick wall" nesting effect
+            const rowOffset = (row % 2 === 0) ? 0 : (ballSize / 2);
+            
+            // Add tiny randomness so it looks like a pile, not a grid
+            const jitterX = (Math.random() * 4) - 2;
+            const jitterY = (Math.random() * 4) - 2;
+
+            this.gameState.gumballs.push({
+                color: option.color,
+                prize: option.prize,
+                isWinning: false,
+                // Convert to Percentages for CSS
+                left: ((startX + (i * ballSize) + rowOffset + jitterX) / 200) * 100,
+                top: ((currentY + jitterY) / 200) * 100,
+                size: 15 + Math.random() * 2, // Slight size variance
+                zIndex: row // Lower rows are behind higher rows
+            });
+            ballCount++;
+        }
+        
+        // Move up for next row
+        currentY -= (ballSize * overlap);
+        row++;
     }
     
-    // Set the winner
+    // Set winning ball
     const winningGumballIndex = Math.floor(Math.random() * this.gameState.gumballs.length);
     const winningOption = this.config.options[this.config.winningIndex];
     
@@ -96,7 +130,7 @@ export class GumballMachine extends HTMLElement {
   }
 
   #setupEventListeners() {
-    const crankHandle = this.root.querySelector('.crank-handle');
+    const crankHandle = this.root.querySelector('.crank-group');
     if(crankHandle) {
         crankHandle.addEventListener('click', () => this.#handleCrankClick());
     }
@@ -106,14 +140,20 @@ export class GumballMachine extends HTMLElement {
     if (this.gameState.isDispensing || this.gameState.gameWon) return;
 
     this.gameState.isDispensing = true;
+    
+    const crankGroup = this.root.querySelector('.crank-group');
+    crankGroup.style.opacity = '0.7';
+    crankGroup.style.cursor = 'not-allowed';
+
     this.#animateCrank();
     this.#dispenseGumball();
   }
 
   #animateCrank() {
     const crankHandle = this.root.querySelector('.crank-handle');
-    crankHandle.style.animation = 'crankTurn 1s ease-out';
-    setTimeout(() => { crankHandle.style.animation = ''; }, 1000);
+    crankHandle.style.animation = 'none';
+    crankHandle.offsetHeight; 
+    crankHandle.style.animation = 'crankTurn 0.8s cubic-bezier(0.45, 0.05, 0.55, 0.95)';
   }
 
   #dispenseGumball() {
@@ -128,23 +168,25 @@ export class GumballMachine extends HTMLElement {
       
       dispensedGumball.style.background = `radial-gradient(circle at 30% 30%, ${this.#lightenColor(winningGumball.color, 40)}, ${winningGumball.color})`;
       dispensedGumball.style.display = 'block';
-      dispensedGumball.style.animation = 'gumballAppear 1s ease-out';
-      
+      dispensedGumball.style.animation = 'dropBounce 0.8s ease-out forwards';
       dispensedGumball.style.cursor = 'pointer';
+      dispensedGumball.title = "Click to open!";
+      
       dispensedGumball.onclick = () => this.#popGumball(dispensedGumball);
       
-    }, 1000); 
+    }, 800); 
   }
 
   #popGumball(gumballElement) {
     if (this.gameState.gameWon) return;
     
+    gumballElement.style.pointerEvents = 'none';
     gumballElement.classList.add('popping');
     
     setTimeout(() => {
       gumballElement.style.display = 'none';
       this.#showPrize();
-    }, 300);
+    }, 250);
   }
 
   #showPrize() {
@@ -154,6 +196,8 @@ export class GumballMachine extends HTMLElement {
     
     prizeText.textContent = this.config.prize_text || winningOption.prize;
     prizeBox.classList.remove('hidden');
+    prizeBox.classList.add('enter');
+    
     this.gameState.gameWon = true;
 
     this.dispatchEvent(new CustomEvent('game-completed', {
@@ -183,6 +227,8 @@ export class GumballMachine extends HTMLElement {
         background: radial-gradient(circle at 30% 30%, ${this.#lightenColor(gumball.color, 60)}, ${gumball.color});
         left: ${gumball.left}%;
         top: ${gumball.top}%;
+        width: ${gumball.size}px;
+        height: ${gumball.size}px;
         z-index: ${gumball.zIndex};
       "></div>
     `).join('');
@@ -193,52 +239,58 @@ export class GumballMachine extends HTMLElement {
         .game-container {
           width: 250px; height: 450px; margin: 20px auto;
           text-align: center; position: relative; padding: 20px;
-          box-shadow: rgba(0, 0, 0, 0.12) 0px 1px 3px, rgba(0, 0, 0, 0.24) 0px 1px 2px;
-          border-radius: 20px;
+          box-shadow: rgba(0, 0, 0, 0.1) 0px 10px 15px -3px, rgba(0, 0, 0, 0.05) 0px 4px 6px -2px;
+          border-radius: 24px;
           background: linear-gradient(135deg, #f8f9fa, #e9ecef);
           overflow: hidden;
+          transition: transform 0.2s;
         }
 
-        .game-title { font-size: 20px; font-weight: bold; margin-bottom: 5px; color: #2c3e50; position: relative; z-index: 10; }
-        .game-subtitle { font-size: 12px; color: #34495e; margin-bottom: 15px; position: relative; z-index: 10; }
+        .game-title { font-size: 20px; font-weight: 800; margin-bottom: 5px; color: #2c3e50; position: relative; z-index: 10; }
+        .game-subtitle { font-size: 12px; color: #6c757d; margin-bottom: 15px; position: relative; z-index: 10; }
 
         .gumball-machine {
           position: relative; width: 200px; height: 320px; margin: 0 auto;
         }
 
-        /* Dome */
         .dome {
           width: 200px; height: 200px; border-radius: 50%;
-          background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(255,255,255,0.3), rgba(200,200,200,0.5));
-          border: 3px solid #bdc3c7;
-          box-shadow: inset 20px -20px 40px rgba(255,255,255,0.4), inset -20px 20px 40px rgba(0,0,0,0.1), 0 8px 20px rgba(0,0,0,0.2);
+          background: linear-gradient(135deg, rgba(255,255,255,0.8), rgba(255,255,255,0.2));
+          border: 4px solid #e0e0e0;
+          box-shadow: inset 10px -10px 20px rgba(255,255,255,0.5), inset -10px 10px 20px rgba(0,0,0,0.05), 0 10px 20px rgba(0,0,0,0.1);
           overflow: hidden;
           position: relative; 
+          z-index: 2;
         }
 
-        .dome.jiggling { animation: domeJiggle 0.1s ease-in-out infinite; }
-        @keyframes domeJiggle {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(1px); }
-          75% { transform: translateX(-1px); }
+        .dome.jiggling { animation: domeShake 0.1s infinite; }
+        @keyframes domeShake { 
+          0% { transform: translate(0,0) rotate(0deg); } 
+          25% { transform: translate(2px, 1px) rotate(1deg); } 
+          75% { transform: translate(-1px, -2px) rotate(-1deg); } 
         }
 
-        /* Gumball - FIX 3: Smaller size (15px) for better realism */
         .gumball {
           position: absolute;
-          width: 15px; height: 15px; 
           border-radius: 50%;
-          box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+          box-shadow: 1px 1px 2px rgba(0,0,0,0.2);
         }
         .gumball::before {
-          content: ''; position: absolute; top: 3px; left: 3px; width: 5px; height: 3px;
+          content: ''; position: absolute; top: 20%; left: 20%; width: 30%; height: 20%;
           background: rgba(255,255,255,0.6); border-radius: 50%; transform: rotate(-45deg);
         }
 
-        /* Base & Crank */
-        .machine-base { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); filter: drop-shadow(0 8px 16px rgba(0,0,0,0.2)); }
-        .crank-handle { cursor: pointer; transition: transform 0.2s ease; transform-origin: 140px 80px; }
-        .crank-handle:hover { transform: scale(1.05); }
+        .machine-base { 
+          position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); 
+          filter: drop-shadow(0 10px 15px rgba(0,0,0,0.2));
+          z-index: 1;
+        }
+
+        .crank-group { transition: opacity 0.2s; cursor: pointer; }
+        .crank-group:hover .crank-handle circle { filter: brightness(1.15); }
+        .crank-group:hover .crank-handle rect { filter: brightness(1.1); }
+        .crank-handle { transform-origin: 140px 80px; }
+
         @keyframes crankTurn { 
             0% { transform: rotate(0deg); } 
             100% { transform: rotate(360deg); } 
@@ -246,32 +298,51 @@ export class GumballMachine extends HTMLElement {
 
         #dispensed-gumball {
           position: absolute; left: 50%; top: 300px; transform: translateX(-50%);
-          width: 30px; height: 30px; border-radius: 50%; display: none; z-index: 100;
-          box-shadow: 0 4px 8px rgba(0,0,0,0.3); transition: transform 0.1s; cursor: pointer;
+          width: 30px; height: 30px; border-radius: 50%; 
+          display: none; z-index: 100;
+          box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
-        #dispensed-gumball.popping { animation: popAnimation 0.3s ease-out forwards; }
-        @keyframes gumballAppear {
-          0% { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.5); }
-          100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+        #dispensed-gumball:hover { transform: translateX(-50%) scale(1.1); filter: brightness(1.1); }
+
+        @keyframes dropBounce {
+          0% { transform: translateX(-50%) translateY(-100px); opacity: 0; }
+          40% { transform: translateX(-50%) translateY(0); opacity: 1; }
+          60% { transform: translateX(-50%) translateY(-15px); }
+          80% { transform: translateX(-50%) translateY(0); }
+          90% { transform: translateX(-50%) translateY(-5px); }
+          100% { transform: translateX(-50%) translateY(0); }
         }
+
+        #dispensed-gumball.popping { animation: popAnimation 0.25s ease-out forwards; }
         @keyframes popAnimation {
-          0% { transform: translateX(-50%) scale(1); }
-          100% { transform: translateX(-50%) scale(0); opacity: 0; }
+          0% { transform: translateX(-50%) scale(1); opacity: 1; }
+          100% { transform: translateX(-50%) scale(1.6); opacity: 0; }
         }
 
         #prize-box {
-          position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-          width: 80%; background: #fffff0; border: 4px solid #f39c12;
-          border-radius: 20px; padding: 20px; text-align: center;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index: 1000;
-          animation: prizeAppear 0.5s ease-out;
+          position: absolute; top: 0; left: 0;
+          width: 100%; height: 100%;
+          background: rgba(255,255,255,0.9);
+          backdrop-filter: blur(4px);
+          display: flex; flex-direction: column; 
+          align-items: center; justify-content: center;
+          z-index: 1000;
+          opacity: 0; pointer-events: none;
+          transition: opacity 0.3s;
         }
-        @keyframes prizeAppear {
-          0% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
-          100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-        }
+        #prize-box.hidden { display: none; }
+        #prize-box.enter { opacity: 1; pointer-events: all; }
+        #prize-box.enter .content { animation: scaleIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 
-        .hidden { display: none !important; }
+        .prize-card {
+            background: white; padding: 20px; border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            text-align: center; width: 80%; border: 2px solid #f39c12;
+        }
+        @keyframes scaleIn {
+            from { transform: scale(0.5); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
       </style>
 
       <div class="game-container">
@@ -290,16 +361,21 @@ export class GumballMachine extends HTMLElement {
               <linearGradient id="coinSlotGrad"><stop offset="0%" stop-color="#2c3e50"/><stop offset="100%" stop-color="#34495e"/></linearGradient>
               <linearGradient id="crankGrad"><stop offset="0%" stop-color="#f39c12"/><stop offset="100%" stop-color="#d68910"/></linearGradient>
             </defs>
+
             <rect x="20" y="20" width="160" height="120" rx="15" fill="url(#baseGrad)" stroke="#a93226" stroke-width="2"/>
             <rect x="30" y="60" width="140" height="2" fill="#a93226" opacity="0.5"/>
             <rect x="30" y="100" width="140" height="2" fill="#a93226" opacity="0.5"/>
             <rect x="80" y="110" width="40" height="15" rx="7" fill="url(#coinSlotGrad)"/>
             <rect x="70" y="35" width="60" height="15" rx="7" fill="#34495e"/>
             <text x="100" y="46" text-anchor="middle" fill="white" font-size="8" font-weight="bold">GUMBALL</text>
-            <g class="crank-handle" style="transform-origin: 140px 80px;">
-              <circle cx="140" cy="80" r="6" fill="#a93226" stroke="#7d2419" stroke-width="1"/>
-              <rect x="140" y="77" width="25" height="6" rx="3" fill="url(#crankGrad)" stroke="#b7950b" stroke-width="1"/>
-              <circle cx="165" cy="80" r="6" fill="#d68910" stroke="#b7950b" stroke-width="1"/>
+
+            <g class="crank-group">
+                <rect x="130" y="65" width="60" height="40" fill="transparent" />
+                <g class="crank-handle">
+                  <circle cx="140" cy="80" r="9" fill="#a93226" stroke="#7d2419" stroke-width="1"/>
+                  <rect x="140" y="76" width="35" height="8" rx="4" fill="url(#crankGrad)" stroke="#b7950b" stroke-width="1"/>
+                  <circle cx="175" cy="80" r="9" fill="#d68910" stroke="#b7950b" stroke-width="1"/>
+                </g>
             </g>
           </svg>
           
@@ -307,9 +383,11 @@ export class GumballMachine extends HTMLElement {
         </div>
         
         <div id="prize-box" class="hidden">
-          <h3 style="margin: 10px 0; color: #f39c12;">🎉 Congratulations 🎉</h3>
-          <p style="margin: 10px 0;">You have won</p>
-          <p id="prize-text" style="font-weight: bold; color: #2c3e50; margin: 10px 0; font-size: 16px;"></p>
+          <div class="content prize-card">
+              <h3 style="margin: 10px 0; color: #f39c12;">🎉 Congratulations!</h3>
+              <p style="margin: 5px 0; color: #666;">You won:</p>
+              <p id="prize-text" style="font-weight: bold; color: #2c3e50; margin: 10px 0; font-size: 18px;"></p>
+          </div>
         </div>
       </div>
     `;
